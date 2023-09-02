@@ -1,0 +1,433 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+COMO PRIMERA MEDIDA, ISNTALAMOS LAS LIBRERÍAS QUE NECESITAMOS
+
+```{r}
+install.packages("caret")
+install.packages("MASS")
+install.packages("tidyverse")
+library(lubridate)
+library(tseries)
+library(tidyverse)
+library(foreign)
+library(timsac)
+library(lmtest)
+library(dplyr)
+library(caTools)
+library(ggplot2)
+library(glmnet)
+library(car)
+library(carData)
+library(caret)
+library(tidyverse)
+library(MASS)
+
+theme_set(theme_classic())
+```
+
+Descargamos el dataset a trabajar que consiste en el listado de los jugadores de los equipos de la primera división del fútbol colombiano
+
+```{r}
+data1 <- read.csv("C:\\Users\\kdrbo\\OneDrive\\Documentos\\VIU\\Estadística avanzada\\Actividad 1\\colombia-categoria-primera-a-players-2022-stats.csv", header=TRUE, stringsAsFactors=FALSE)
+
+data1
+summary(data1)
+```
+
+Revisamos todas las columans que tiene el dataset
+
+```{r}
+names(data1)
+```
+
+Antes de aplicar el modelo de regresión, seleccionamos la cantidad de goles (goals_overall) como variable dependiente y analizaremos si hay colinealidad con las demás variables, pero antes de eso, eliminaremos las columnas que no aportan nada al análisis, como algunas variables categóricas y algunas con campos vacíos
+
+```{r}
+
+data2 <- data1 [, -1]
+data2 <- data2 [, -2, -3]
+data2 <- data2 [, -2, -3]
+data2 <- data2 [, -2, -3]
+data2 <- data2 [, -2, -3]
+data2 <- data2 [, -3]
+data2 <- data2 [, -6]
+data2 <- data2 [, -39, -40]
+data2 <- data2 [, -38, -39]
+data2 <- data2 [, -37, -38]
+data2 <- data2 [, -37]
+data2 <- data2 [, -35, 36]
+data2 <- data2 [, -22]
+data2 <- data2 [, -19]
+data2 <- data2 [, -14]
+data2 <- data2 [, -8]
+data2 <- data2 [, -5]
+data2
+```
+
+De las varaibles resultantes, se hará una gráfica que muestre la correlación entre las variables más relevantes para el modelo de regresión que se va a trabajar
+
+```{r}
+l<-c('age','minutes_played_overall','appearances_overall','goals_overall','assists_overall','penalty_goals','clean_sheets_overall','yellow_cards_overall','red_cards_overall')
+```
+
+```{r}
+sample_data <- data2[l]
+pairs( sample_data )
+```
+
+Para poder observar si hay colinealidad en el modelo de regersión, separamos los datos en dos grupos train y test para poder hacer cross validation.
+
+```{r}
+#Dividimos los datos en training(80%) y testing(20%)
+set.seed(123)
+
+training.muestras <- data2$goals_overall%>%
+  createDataPartition(p=.8,list=FALSE)
+
+train.datos <- data2[training.muestras, ]
+
+test.datos <- data2[-training.muestras, ]
+```
+
+```{r}
+#Construimos el modelo de Regresión
+
+modelo1 <- lm(goals_overall ~., data = train.datos)
+
+coef(modelo1)
+```
+
+```{r}
+#Se hacen predicciones
+predicciones <-modelo1 %>% predict(test.datos)
+
+predicciones
+```
+
+```{r}
+#Revisamos el desempeño del modelo 1
+
+data.frame(RMSE=RMSE(predicciones, test.datos$goals_overall),R2=R2(predicciones,test.datos$goals_overall))
+```
+
+```{r}
+#Detectando Multicolinealidad
+
+
+#Se revisa el factor de  inflación de varianza
+
+car::vif(modelo1)
+```
+
+```{r}
+#Se revisan los valores mas altos como minutes_played_overall con valor mayor que 10
+# valores por encima de 5 son un problema! Así que se recomienda eliminar la variable
+
+modelo2 <- lm(goals_overall ~. -minutes_played_overall-minutes_played_home-appearances_overall-appearances_home  -clean_sheets_overall-clean_sheets_home-conceded_overall-conceded_home-goals_involved_per_90_overall-assists_per_90_overall-goals_per_90_overall,  data = train.datos)
+coef(modelo2)
+```
+
+```{r}
+#Se hacen predicciones nuevamente
+
+predicciones2 <-modelo2 %>% predict(test.datos)
+predicciones2
+```
+
+```{r}
+data.frame(RMSE=RMSE(predicciones2, test.datos$goals_overall),R2=R2(predicciones2,test.datos$goals_overall))
+```
+
+```{r}
+car::vif(modelo2)
+```
+
+Ahora se implementará el modelo de regresión RIDGE
+
+```{r}
+#Librerías necesarias
+install.packages("glmnet")
+install.packages("pacman")
+library(caret)
+library(glmnet)
+library(pacman)
+pacman::p_load(pacman,dplyr, ggplot2, rio, gridExtra, scales, ggcorrplot, e1071)
+```
+
+```{r}
+#Paquete GLMNET Regression Ridge
+
+#Sintaxis =glmnet(x,y...,alpha=0,nlambda=100..)
+#alpha=0 entonces corre Regresion Ridge---->Contrae coeficientes pero no los hace cero
+#alpha=1 entonces corre Regresion Lasso----> hace cero algunos coeficentes
+#Este paquete estandariza las variables para que esten en la misma   escala
+
+summary(train.datos)
+```
+```{r}
+summary(test.datos)
+```
+
+```{r}
+#Para conocer las dimensiones de mis datos
+dim(train.datos)
+```
+```{r}
+dim(test.datos)
+```
+
+
+```{r}
+#Para generar las variables predictoras
+x=model.matrix(goals_overall~.,train.datos)
+head(x)
+```
+
+```{r}
+#Para quitar el intercepto
+x=model.matrix(goals_overall~.,train.datos)[,-1]
+head(x)
+```
+
+```{r}
+#Para generar la variable dependiente
+y=train.datos$goals_overall
+y
+```
+```{r}
+ridge.model=glmnet(x,y,alpha =0)
+dim(coef(ridge.model))
+```
+
+```{r}
+#construye 100 modelos por defecto
+coef(ridge.model)
+```
+
+```{r}
+ridge.model$lambda
+```
+
+```{r}
+plot(ridge.model,"lambda",label=TRUE)
+```
+
+```{r}
+#Para saber el lambda del modelo 20
+ridge.model$lambda[20]
+log(ridge.model$lambda[20])
+coef(ridge.model)[,20]
+plot(ridge.model,"lambda",label=TRUE)
+abline(v=log(ridge.model$lambda[20]), col="blue",lwd= 4,lty =3)
+
+```
+
+```{r}
+#Se hace otro ejemplo, pero esta vez con el modelo 45
+ridge.model$lambda[45]
+log(ridge.model$lambda[45])
+coef(ridge.model)[,45]
+plot(ridge.model,"lambda",label= TRUE)
+abline(v=log(ridge.model$lambda[45]), col="red",lwd= 4,lty =3)
+```
+
+```{r}
+#hacer prediccion con un modelo en particular
+x.test.datos=model.matrix(goals_overall~.,test.datos)[,-1]
+pred=predict(ridge.model, s=ridge.model$lambda[45],newx = x.test.datos)
+pred
+```
+
+```{r}
+#Mejor lambda con validación cruzada 
+sal.cv=cv.glmnet(x,y,alpha=0)
+plot(sal.cv)
+```
+```{r}
+mejor.lambda =sal.cv$lambda.min
+mejor.lambda
+log(mejor.lambda)
+```
+
+```{r}
+#hacer prediccion con el mejor lambda
+coef(ridge.model)[,which(ridge.model$lambda==mejor.lambda)]
+```
+```{r}
+pred=predict(ridge.model, s=mejor.lambda,newx = x.test.datos)
+pred
+```
+```{r}
+data.frame(RMSE=RMSE(pred,test.datos$goals_overall),Rsquare = R2(pred,test.datos$goals_overall))
+```
+Ahora se implementará el modelo de regresión LASSO
+```{r}
+#Paquete GLMNET Regression Lasso
+
+#Sintaxis =glmnet(x,y...,alpha=1,nlambda=100..)
+#alpha=0 entonces corre Regresion Ridge---->Contrae coeficientes pero no los hace cero
+#alpha=1 entonces corre Regresion Lasso----> hace cero algunos coeficentes
+#Este paquete estandariza las variables para que esten en la misma   escala
+
+
+#Para quitar el intercepto
+x=model.matrix(goals_overall~.,train.datos)[,-1]
+print(x)
+```
+```{r}
+#Para generar la variable dependiente
+y=train.datos$goals_overall
+print(y)
+```
+```{r}
+lasso.model=glmnet(x,y,alpha =1)
+dim(coef(lasso.model))
+```
+
+```{r}
+Coeflasso=coef(lasso.model)
+print(Coeflasso)
+```
+```{r}
+lasso.model$lambda
+```
+
+```{r}
+plot(lasso.model,"lambda",label=TRUE)
+```
+
+```{r}
+#Para saber el lambda modelo 30
+lasso.model$lambda[30]
+```
+```{r}
+log(lasso.model$lambda[30])
+```
+```{r}
+coef30=coef(lasso.model)[,30]
+print(coef30)
+```
+```{r}
+plot(lasso.model,"lambda",label=TRUE)
+abline(v=log(lasso.model$lambda[30]), col="blue",lwd= 4,lty =3)
+```
+
+```{r}
+lasso.model$lambda[15]
+```
+
+```{r}
+log(lasso.model$lambda[15])
+```
+
+```{r}
+coef(lasso.model)[,15]
+```
+
+```{r}
+plot(lasso.model,"lambda",label= TRUE)
+abline(v=log(lasso.model$lambda[15]), col="blue",lwd= 4,lty =3)
+```
+
+```{r}
+#hacer prediccion con un modelo en particular
+x.test.datos=model.matrix(goals_overall~.,test.datos)[,-1]
+pred=predict(lasso.model, s=lasso.model$lambda[32],newx = x.test.datos)
+print(pred)
+```
+
+```{r}
+#Mejor lambda con validación cruzada 
+sal.cv=cv.glmnet(x,y,alpha=1)
+plot(sal.cv)
+```
+
+```{r}
+mejor.lambda =sal.cv$lambda.min
+mejor.lambda
+
+```
+
+```{r}
+log(mejor.lambda)
+```
+
+```{r}
+#hacer predicción conmejor lambda
+coef(lasso.model)[,which(lasso.model$lambda==mejor.lambda)]
+```
+
+```{r}
+pred=predict(lasso.model, s=mejor.lambda,newx = x.test.datos)
+pred
+```
+Ahora haremos una regresión múltiple no lineal`
+
+```{r}
+#Para visualizar las variables de interés 
+ggplot(train.datos, aes( minutes_played_overall ,goals_overall))+ geom_point () + stat_smooth()
+ggplot(train.datos, aes( assists_overall ,goals_overall))+ geom_point () + stat_smooth()
+ggplot(train.datos, aes( min_per_match ,goals_overall))+ geom_point () + stat_smooth()
+ggplot(train.datos, aes( age ,goals_overall))+ geom_point () + stat_smooth()
+ggplot(train.datos, aes( appearances_overall ,goals_overall))+ geom_point () + stat_smooth()
+
+```
+```{r}
+#Genera el modelo de regresion con variables categóricas en R
+modeloA <-lm(goals_overall ~ appearances_overall, data =train.datos)
+```
+
+```{r}
+#Coeficientes del Modelo
+summary(modelo1)$coef
+```
+
+```{r}
+# Haz predicciones
+prediccionesA <- modeloA  %>% predict(test.datos)
+prediccionesA
+```
+
+```{r}
+#Para conocer el desempeño del modelo A
+data.frame(RMSE = RMSE(prediccionesA, test.datos$goals_overall),R2 = R2(prediccionesA, test.datos$goals_overall))
+```
+
+```{r}
+#Para visualizar las variables de interés appearances_overall y goals_overall
+ggplot(train.datos, aes(appearances_overall, goals_overall))+ geom_point () + stat_smooth(method = lm, formula =   y~ x)
+```
+
+```{r}
+#Realiza las predicciones
+modeloB <- lm(goals_overall  ~ poly(appearances_overall,5),data = train.datos) 
+summary(modeloB)$coef
+
+prediccionesB <- modeloB %>% predict(test.datos)
+prediccionesB
+```
+
+```{r}
+#Para conocer el desempeño del modelo B
+data.frame(RMSE = RMSE(prediccionesB, test.datos$goals_overall),R2 = R2(prediccionesB, test.datos$goals_overall))
+
+```
+
+```{r}
+#Para visualizar las variables de interés lstat y medv
+ggplot(train.datos, aes(appearances_overall,goals_overall))+ geom_point () + stat_smooth(method = lm, formula =   y  ~ poly(x,5))
+```
+
+```{r}
+
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
